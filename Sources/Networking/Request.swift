@@ -27,6 +27,12 @@ class Request<Model:Decodable> {
         return try JSONDecoder().decode(Model.self, from: data)
     }
     
+    
+    /// <#Description#>
+    /// - Parameters:
+    ///   - url: <#url description#>
+    ///   - repeatTimeInterval: <#repeatTimeInterval description#>
+    /// - Returns: <#description#>
     public func asyncThrowingStream(from url: URL, repeatTimeInterval: TimeInterval) async -> AsyncThrowingStream<Model, Error> {
         return AsyncThrowingStream<Model, Error> { continuation in
             streamTask = Task {
