@@ -31,6 +31,43 @@ final class NetworkingTests {
         #expect(model?.id != 2)
         #expect(model?.name != "lorum ipsum")
     }
+
+    @Test("Request.asyncStream Success")
+    static func asyncStreamSuccess() async throws {
+        let stream = Request<MockModel>.asyncStream(request, interval: .milliseconds(100), session: session)
+        var count = 0
+
+        for await model in stream {
+            #expect(model.id == 1)
+            #expect(model.name == "delectus aut autem")
+            count += 1
+            if count >= 3 {
+                break
+            }
+        }
+
+        #expect(count == 3)
+    }
+
+    @Test("Request.asyncStream Cancellation")
+    static func asyncStreamCancellation() async throws {
+        let stream = Request<MockModel>.asyncStream(request, interval: .milliseconds(100), session: session)
+
+        let task = Task {
+            var count = 0
+            for await _ in stream {
+                count += 1
+            }
+            return count
+        }
+
+        try await Task.sleep(for: .milliseconds(250))
+        task.cancel()
+
+        let count = await task.value
+        #expect(count >= 2)
+        #expect(count <= 3)
+    }
 }
 
 // MARK: - Test Models
@@ -44,7 +81,7 @@ struct MockModel: Codable, Equatable {
     let name: String
 }
 
-struct TestURLSession: URLSessionAsycProtocol {
+struct TestURLSession: URLSessionAsyncProtocol, Sendable {
     static let model = MockModel(id: modelId, name: modelString)
     var data = try! JSONEncoder().encode(model)
     static let url = URL(string: "u2.com")! // unused
@@ -75,6 +112,7 @@ class URLCombineProtocol: URLProtocol {
 
     override func stopLoading() { }
 }
+
 
 
 

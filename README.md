@@ -1,2 +1,2 @@
 # networking
-Async URLSession Tools
+Async URLSession Tools by Josh MacDonald
