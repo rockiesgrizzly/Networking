@@ -65,6 +65,36 @@ class Request<Model: Decodable & Sendable> {
             }
         }
     }
+    
+    // MARK: - Combine
+    
+    /// Creates a Combine publisher that repeatedly fetches data from the provided request
+    /// - Parameters:
+    ///   - request: URLRequest to poll
+    ///   - interval: Time interval between polling requests (default: 3 seconds)
+    ///   - session: URLSession to use for requests (default: URLSession.shared)
+    /// - Returns: AnyPublisher that emits decoded Model objects
+    public static func publisher(_ request: URLRequest, interval: TimeInterval = 3, session: URLSession = URLSession.shared) ->
+    AnyPublisher<Model, Error> {
+        Timer.publish(every: interval, on: .main, in: .common)
+            .autoconnect()
+            .setFailureType(to: Error.self)
+            .flatMap { _ in
+                session.dataTaskPublisher(for: request)
+                    .tryMap { data, response in
+                        guard let httpResponse = response as? HTTPURLResponse,
+                              httpResponse.statusCode == 200 else {
+                            throw RequestError.httpUrlResponseFailed(response)
+                        }
+                        return data
+                    }
+                    .decode(type: Model.self, decoder: JSONDecoder())
+                    .catch { _ in Empty<Model, Error>() }
+            }
+            .eraseToAnyPublisher()
+    }
+    
+
 
     // MARK: - Errors
     public enum RequestError: Error {

@@ -12,29 +12,30 @@ import Combine
 import Foundation
 
 
-final class NetworkingTests {
+@Suite("Concurrency Tests")
+struct ConcurrencyTests {
     static let url = URL(string: "https://jsonplaceholder.typicode.com/todos/1")!
     static let request = URLRequest(url: url)
     static let session = TestURLSession()
-    
+
     @Test("Request.asyncGet Success")
-    static func asyncGetSuccess() async throws {
-        let model: MockModel? = try await Request<MockModel>.asyncGet(request, session: session)
+    func asyncGetSuccess() async throws {
+        let model: MockModel? = try await Request<MockModel>.asyncGet(Self.request, session: Self.session)
         #expect(model != nil)
         #expect(model?.id == 1)
         #expect(model?.name == "delectus aut autem")
     }
-    
+
     @Test("Request.asyncGet Failure")
-    static func asyncGetFailure() async throws {
-        let model: MockModel? = try await Request<MockModel>.asyncGet(request, session: session)
+    func asyncGetFailure() async throws {
+        let model: MockModel? = try await Request<MockModel>.asyncGet(Self.request, session: Self.session)
         #expect(model?.id != 2)
         #expect(model?.name != "lorum ipsum")
     }
 
     @Test("Request.asyncStream Success")
-    static func asyncStreamSuccess() async throws {
-        let stream = Request<MockModel>.asyncStream(request, interval: .milliseconds(100), session: session)
+    func asyncStreamSuccess() async throws {
+        let stream = Request<MockModel>.asyncStream(Self.request, interval: .milliseconds(100), session: Self.session)
         var count = 0
 
         for await model in stream {
@@ -50,8 +51,8 @@ final class NetworkingTests {
     }
 
     @Test("Request.asyncStream Cancellation")
-    static func asyncStreamCancellation() async throws {
-        let stream = Request<MockModel>.asyncStream(request, interval: .milliseconds(100), session: session)
+    func asyncStreamCancellation() async throws {
+        let stream = Request<MockModel>.asyncStream(Self.request, interval: .milliseconds(100), session: Self.session)
 
         let task = Task {
             var count = 0
@@ -67,6 +68,68 @@ final class NetworkingTests {
         let count = await task.value
         #expect(count >= 2)
         #expect(count <= 3)
+    }
+}
+
+@Suite("Combine Tests")
+struct CombineTests {
+    static let url = URL(string: "https://jsonplaceholder.typicode.com/todos/1")!
+    static let request = URLRequest(url: url)
+
+    static var mockSession: URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [URLCombineProtocol.self]
+        return URLSession(configuration: config)
+    }
+
+    @Test("Request.publisher Success")
+    func publisherSuccess() async throws {
+        await withCheckedContinuation { continuation in
+            var cancellables = Set<AnyCancellable>()
+            var receivedModels: [MockModel] = []
+
+            let publisher = Request<MockModel>.publisher(Self.request, interval: 0.1, session: Self.mockSession)
+
+            publisher
+                .sink(
+                    receiveCompletion: { _ in },
+                    receiveValue: { model in
+                        receivedModels.append(model)
+                        if receivedModels.count == 3 {
+                            #expect(receivedModels.allSatisfy { $0.id == 1 && $0.name == "delectus aut autem" })
+                            cancellables.removeAll()
+                            continuation.resume()
+                        }
+                    }
+                )
+                .store(in: &cancellables)
+        }
+    }
+
+    @Test("Request.publisher Cancellation")
+    func publisherCancellation() async throws {
+        var cancellables = Set<AnyCancellable>()
+        var count = 0
+
+        let publisher = Request<MockModel>.publisher(Self.request, interval: 0.1, session: Self.mockSession)
+
+        publisher
+            .sink(
+                receiveCompletion: { _ in },
+                receiveValue: { _ in
+                    count += 1
+                }
+            )
+            .store(in: &cancellables)
+
+        try await Task.sleep(for: .milliseconds(250))
+        cancellables.removeAll()
+
+        let finalCount = count
+        try await Task.sleep(for: .milliseconds(150))
+
+        #expect(count == finalCount)
+        #expect(count >= 2)
     }
 }
 
