@@ -20,7 +20,13 @@ struct ConcurrencyTests {
 
     @Test("Request.asyncGet Success")
     func asyncGetSuccess() async throws {
+        // GIVEN: A URLRequest configured with test session
+        // (using static request and session)
+
+        // WHEN: Making an async GET request
         let model: MockModel? = try await Request<MockModel>.asyncGet(Self.request, session: Self.session)
+
+        // THEN: The model is decoded successfully with expected values
         #expect(model != nil)
         #expect(model?.id == 1)
         #expect(model?.name == "delectus aut autem")
@@ -28,16 +34,24 @@ struct ConcurrencyTests {
 
     @Test("Request.asyncGet Failure")
     func asyncGetFailure() async throws {
+        // GIVEN: A URLRequest configured with test session
+        // (using static request and session)
+
+        // WHEN: Making an async GET request
         let model: MockModel? = try await Request<MockModel>.asyncGet(Self.request, session: Self.session)
+
+        // THEN: The model does not contain incorrect values
         #expect(model?.id != 2)
         #expect(model?.name != "lorum ipsum")
     }
 
     @Test("Request.asyncStream Success")
     func asyncStreamSuccess() async throws {
+        // GIVEN: An AsyncStream configured to poll every 100ms
         let stream = Request<MockModel>.asyncStream(Self.request, interval: .milliseconds(100), session: Self.session)
         var count = 0
 
+        // WHEN: Iterating over the stream and collecting 3 values
         for await model in stream {
             #expect(model.id == 1)
             #expect(model.name == "delectus aut autem")
@@ -47,13 +61,16 @@ struct ConcurrencyTests {
             }
         }
 
+        // THEN: Exactly 3 values were received with correct data
         #expect(count == 3)
     }
 
     @Test("Request.asyncStream Cancellation")
     func asyncStreamCancellation() async throws {
+        // GIVEN: An AsyncStream configured to poll every 100ms
         let stream = Request<MockModel>.asyncStream(Self.request, interval: .milliseconds(100), session: Self.session)
 
+        // WHEN: Starting a task that iterates over the stream
         let task = Task {
             var count = 0
             for await _ in stream {
@@ -62,9 +79,11 @@ struct ConcurrencyTests {
             return count
         }
 
+        // AND: Cancelling the task after 250ms
         try await Task.sleep(for: .milliseconds(250))
         task.cancel()
 
+        // THEN: The stream stops and received 2-3 values before cancellation
         let count = await task.value
         #expect(count >= 2)
         #expect(count <= 3)
@@ -84,17 +103,21 @@ struct CombineTests {
 
     @Test("Request.publisher Success")
     func publisherSuccess() async throws {
+        // GIVEN: A Combine publisher configured to poll every 0.1s
         await withCheckedContinuation { continuation in
             var cancellables = Set<AnyCancellable>()
             var receivedModels: [MockModel] = []
 
             let publisher = Request<MockModel>.publisher(Self.request, interval: 0.1, session: Self.mockSession)
 
+            // WHEN: Subscribing to the publisher and collecting values
             publisher
                 .sink(
                     receiveCompletion: { _ in },
                     receiveValue: { model in
                         receivedModels.append(model)
+
+                        // THEN: After receiving 3 values, all have correct data
                         if receivedModels.count == 3 {
                             #expect(receivedModels.allSatisfy { $0.id == 1 && $0.name == "delectus aut autem" })
                             cancellables.removeAll()
@@ -108,11 +131,13 @@ struct CombineTests {
 
     @Test("Request.publisher Cancellation")
     func publisherCancellation() async throws {
+        // GIVEN: A Combine publisher configured to poll every 0.1s
         var cancellables = Set<AnyCancellable>()
         var count = 0
 
         let publisher = Request<MockModel>.publisher(Self.request, interval: 0.1, session: Self.mockSession)
 
+        // WHEN: Subscribing to the publisher
         publisher
             .sink(
                 receiveCompletion: { _ in },
@@ -122,12 +147,14 @@ struct CombineTests {
             )
             .store(in: &cancellables)
 
+        // AND: Cancelling after 350ms by removing all cancellables
         try await Task.sleep(for: .milliseconds(350))
         cancellables.removeAll()
 
         let finalCount = count
         try await Task.sleep(for: .milliseconds(150))
 
+        // THEN: No new values are received after cancellation
         #expect(count == finalCount)
         #expect(count >= 1)
     }
